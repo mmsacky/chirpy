@@ -27,15 +27,19 @@ type JSONerror struct {
 	Error string `json:"error"`
 }
 
-type validChirp struct {
-	CleanedBody string `json:"cleaned_body"`
-}
-
 type User struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
 func main() {
@@ -67,9 +71,8 @@ func main() {
 	mux.Handle("/app", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", rootHandler)))
 
 	mux.HandleFunc("GET /api/healthz", readiness)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
-
 	mux.HandleFunc("POST /api/users", apiCfg.createUser)
+	mux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.countReq)
 	mux.HandleFunc("POST /admin/reset", apiCfg.reset)
@@ -112,56 +115,71 @@ func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func validateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 
-	type userPostRequest struct {
-		Body string `json:"body"`
+	ctx := r.Context()
+
+	type createChirpRequest struct {
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
-	chirp := userPostRequest{}
-	err := decoder.Decode(&chirp)
+	chirpRequest := createChirpRequest{}
+	err := decoder.Decode(&chirpRequest)
+	defer r.Body.Close()
+
 	if err != nil {
 		log.Printf("Error decoding chirp: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
 		return
 	}
 
-	if len(chirp.Body) > 140 {
-		respondWithError(w, 400, "Chirp is too long")
+	if len(chirpRequest.Body) > 140 {
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
 
-	cleanedChirp := cleanChirp(chirp.Body)
-
-	validChirp := validChirp{
-		CleanedBody: cleanedChirp,
+	chirpParams := database.CreateChirpParams{
+		Body:   cleanChirp(chirpRequest.Body),
+		UserID: chirpRequest.UserID,
 	}
 
-	respondWithJSON(w, http.StatusOK, validChirp)
+	DBChirp, err := cfg.db.CreateChirp(ctx, chirpParams)
+	if err != nil {
+		log.Printf("Error adding chirp to the database: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp")
+		return
+	}
+
+	chirp := Chirp(DBChirp)
+
+	respondWithJSON(w, http.StatusCreated, chirp)
 
 }
 
 func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 
-	type userPostRequest struct {
+	type createUserRequest struct {
 		Email string `json:"email"`
 	}
 	ctx := r.Context()
 
 	decoder := json.NewDecoder(r.Body)
-	userRequest := userPostRequest{}
+	defer r.Body.Close()
+
+	userRequest := createUserRequest{}
 	err := decoder.Decode(&userRequest)
 	if err != nil {
 		log.Printf("Error decoding user email address: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
 		return
 	}
 
 	DBUser, err := cfg.db.CreateUser(ctx, userRequest.Email)
 	if err != nil {
 		log.Printf("Error creating database user: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
 		return
 	}
 	user := User(DBUser)
