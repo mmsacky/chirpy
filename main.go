@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/mmsacky/chirpy.git/internal/auth"
 	"github.com/mmsacky/chirpy.git/internal/database"
 )
 
@@ -22,25 +22,6 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             database.Queries
 	platform       string
-}
-
-type JSONerror struct {
-	Error string `json:"error"`
-}
-
-type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-}
-
-type Chirp struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Body      string    `json:"body"`
-	UserID    uuid.UUID `json:"user_id"`
 }
 
 func main() {
@@ -72,10 +53,13 @@ func main() {
 	mux.Handle("/app", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", rootHandler)))
 
 	mux.HandleFunc("GET /api/healthz", readiness)
+
 	mux.HandleFunc("GET /api/chirps", apiCfg.getChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirp)
-	mux.HandleFunc("POST /api/users", apiCfg.createUser)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
+
+	mux.HandleFunc("POST /api/users", apiCfg.createUser)
+	mux.HandleFunc("POST /api/login", apiCfg.login)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.countReq)
 	mux.HandleFunc("POST /admin/reset", apiCfg.reset)
@@ -118,6 +102,94 @@ func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+
+	type createUserRequest struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	ctx := r.Context()
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	userRequest := createUserRequest{}
+	err := decoder.Decode(&userRequest)
+	if err != nil {
+		log.Printf("Error decoding user information: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
+		return
+	}
+
+	hash, err := auth.HashPassword(userRequest.Password)
+	if err != nil {
+		log.Println(err)
+		respondWithError(w, http.StatusInternalServerError, "Unexpected error")
+		return
+	}
+
+	userParams := database.CreateUserParams{
+		Email:          userRequest.Email,
+		HashedPassword: hash,
+	}
+
+	dbUser, err := cfg.db.CreateUser(ctx, userParams)
+	if err != nil {
+		log.Printf("Error creating database user: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
+		return
+	}
+
+	user := mapDbUserStruct(dbUser)
+
+	respondWithJSON(w, http.StatusCreated, user)
+
+}
+
+func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type createUserRequest struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	userRequest := createUserRequest{}
+	err := decoder.Decode(&userRequest)
+	if err != nil {
+		log.Printf("Error decoding user information: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
+		return
+	}
+
+	dbUser, err := cfg.db.GetUserByEmail(ctx, userRequest.Email)
+	if err != nil {
+		log.Printf("Error getting user from the database: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	match, err := auth.CheckPasswordHash(userRequest.Password, dbUser.HashedPassword)
+	if err != nil {
+		log.Printf("Error comparing password")
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	if !match {
+		log.Printf("Error password doesn't match")
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	user := mapDbUserStruct(dbUser)
+
+	respondWithJSON(w, http.StatusOK, user)
+
+}
+
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 
 	const maxChirpLength = 140
@@ -135,7 +207,7 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	if err != nil {
-		log.Printf("Error decoding chirp: %w", err)
+		log.Printf("Error decoding chirp: %s", err)
 		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
 		return
 	}
@@ -157,51 +229,9 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chirp := Chirp{
-		ID:        dbChirp.ID,
-		CreatedAt: dbChirp.CreatedAt,
-		UpdatedAt: dbChirp.UpdatedAt,
-		Body:      dbChirp.Body,
-		UserID:    dbChirp.UserID,
-	}
+	chirp := mapDbChirpStruct(dbChirp)
 
 	respondWithJSON(w, http.StatusCreated, chirp)
-
-}
-
-func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
-
-	type createUserRequest struct {
-		Email string `json:"email"`
-	}
-	ctx := r.Context()
-
-	decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
-
-	userRequest := createUserRequest{}
-	err := decoder.Decode(&userRequest)
-	if err != nil {
-		log.Printf("Error decoding user email address: %s", err)
-		respondWithError(w, http.StatusBadRequest, "Couldn't parse JSON")
-		return
-	}
-
-	dbUser, err := cfg.db.CreateUser(ctx, userRequest.Email)
-	if err != nil {
-		log.Printf("Error creating database user: %s", err)
-		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
-		return
-	}
-
-	user := User{
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
-	}
-
-	respondWithJSON(w, http.StatusCreated, user)
 
 }
 
@@ -218,16 +248,12 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 	chirps := []Chirp{}
 
 	for _, dbChirp := range dbChirps {
-		chirp := Chirp{
-			ID:        dbChirp.ID,
-			Body:      dbChirp.Body,
-			CreatedAt: dbChirp.CreatedAt,
-			UpdatedAt: dbChirp.UpdatedAt,
-			UserID:    dbChirp.UserID,
-		}
+
+		chirp := mapDbChirpStruct(dbChirp)
 		chirps = append(chirps, chirp)
 
 	}
+
 	respondWithJSON(w, http.StatusOK, chirps)
 
 }
@@ -252,13 +278,7 @@ func (cfg *apiConfig) getChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chirp := Chirp{
-		ID:        dbChirp.ID,
-		Body:      dbChirp.Body,
-		CreatedAt: dbChirp.CreatedAt,
-		UpdatedAt: dbChirp.UpdatedAt,
-		UserID:    dbChirp.UserID,
-	}
+	chirp := mapDbChirpStruct(dbChirp)
 
 	respondWithJSON(w, http.StatusOK, chirp)
 }

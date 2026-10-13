@@ -6,7 +6,30 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/mmsacky/chirpy.git/internal/database"
 )
+
+type JSONerror struct {
+	Error string `json:"error"`
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
 
@@ -54,4 +77,25 @@ func cleanChirp(chirp string) string {
 	}
 
 	return strings.Join(words, " ")
+}
+
+func mapDbChirpStruct(dbChirp database.Chirp) Chirp {
+
+	return Chirp{
+		ID:        dbChirp.ID,
+		Body:      dbChirp.Body,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		UserID:    dbChirp.UserID,
+	}
+}
+
+func mapDbUserStruct(dbUser database.User) User {
+
+	return User{
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
 }
