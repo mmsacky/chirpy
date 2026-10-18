@@ -1,36 +1,42 @@
 package auth
 
-import (
-	"testing"
-)
+import "testing"
 
-// TestHashPassword_Success verifies that a password is successfully hashed,
-// returns a non-empty string, and can be verified back using argon2id.
-func TestHashPassword_Success(t *testing.T) {
-	password := "SecurePassword123!"
+func TestHashPassword(t *testing.T) {
+
+	password := "password"
 
 	hash, err := HashPassword(password)
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("HashPassword() returned an unexpected error: %v", err)
 	}
-
 	if hash == "" {
-		t.Fatalf("expected a non-empty hash string, got an empty string")
+		t.Fatal("HashPassword returned an empty token")
 	}
 
-	// Verify that the generated hash correctly matches the original password
+}
+
+func TestHashPassword_Success(t *testing.T) {
+	password := "password"
+
+	hash, err := HashPassword(password)
+	if err != nil {
+		t.Fatalf("HashPassword() returned an unexpected error: %v", err)
+	}
+	if hash == "" {
+		t.Fatal("HashPassword returned an empty token")
+	}
+
 	match, err := CheckPasswordHash(password, hash)
 	if err != nil {
-		t.Fatalf("unexpected error when comparing password and hash: %v", err)
+		t.Fatalf("CheckPasswordHash() returned an unexpected error: %v", err)
 	}
 
 	if !match {
-		t.Errorf("expected the generated hash to match the plain-text password")
+		t.Fatalf("CheckPasswordHash() password did not match hash: %v", err)
 	}
 }
 
-// TestHashPassword_SaltUniqueness ensures that hashing the same password
-// multiple times produces different hash strings due to cryptographically-secure random salts.
 func TestHashPassword_SaltUniqueness(t *testing.T) {
 	password := "RepeatPassword456!"
 
@@ -48,7 +54,6 @@ func TestHashPassword_SaltUniqueness(t *testing.T) {
 		t.Errorf("expected unique hashes due to random salting, but both were identical: %s", hash1)
 	}
 
-	// Both distinct hashes should still successfully verify against the password
 	match1, _ := CheckPasswordHash(password, hash1)
 	match2, _ := CheckPasswordHash(password, hash2)
 
@@ -57,11 +62,9 @@ func TestHashPassword_SaltUniqueness(t *testing.T) {
 	}
 }
 
-// TestCheckPasswordHash_Match verifies that a correct password returns true and no error.
 func TestCheckPasswordHash_Match(t *testing.T) {
 	password := "SecurePassword123!"
 
-	// Generate a valid hash for testing purposes
 	hash, err := HashPassword(password)
 	if err != nil {
 		t.Fatalf("failed to generate helper hash: %v", err)
@@ -77,7 +80,6 @@ func TestCheckPasswordHash_Match(t *testing.T) {
 	}
 }
 
-// TestCheckPasswordHash_NoMatch verifies that an incorrect password returns false and no error.
 func TestCheckPasswordHash_NoMatch(t *testing.T) {
 	password := "SecurePassword123!"
 	wrongPassword := "WrongPassword999!"
@@ -97,8 +99,6 @@ func TestCheckPasswordHash_NoMatch(t *testing.T) {
 	}
 }
 
-// TestCheckPasswordHash_InvalidHashError verifies that a malformed hash string
-// correctly triggers and returns an error.
 func TestCheckPasswordHash_InvalidHashError(t *testing.T) {
 	password := "SecurePassword123!"
 	invalidHash := "this-is-not-a-valid-argon2id-hash-string"

@@ -15,7 +15,7 @@ INSERT INTO
 VALUES
   (gen_random_uuid (), NOW(), NOW(), $1, $2)
 RETURNING
-  id, created_at, updated_at, email, hashed_password
+  id, created_at, updated_at, email, hashed_password, token
 `
 
 type CreateUserParams struct {
@@ -32,13 +32,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.Token,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT
-  id, created_at, updated_at, email, hashed_password
+  id, created_at, updated_at, email, hashed_password, token
 FROM
   users
 WHERE
@@ -54,6 +55,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.Token,
 	)
 	return i, err
 }
