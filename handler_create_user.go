@@ -47,7 +47,7 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := mapDbUserStruct(dbUser)
+	user := mapDbUserStruct(dbUser, "", "")
 
 	respondWithJSON(w, http.StatusCreated, user)
 

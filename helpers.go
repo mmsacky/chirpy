@@ -17,11 +17,12 @@ type JSONerror struct {
 }
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
 }
 
 type Chirp struct {
@@ -30,6 +31,10 @@ type Chirp struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body"`
 	UserID    uuid.UUID `json:"user_id"`
+}
+
+type AccessToken struct {
+	Token string `json:"token"`
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
@@ -91,13 +96,20 @@ func mapDbChirpStruct(dbChirp database.Chirp) Chirp {
 	}
 }
 
-func mapDbUserStruct(dbUser database.User) User {
+func mapDbUserStruct(dbUser database.User, token string, refreshToken string) User {
 
 	return User{
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
-		Token:     dbUser.Token,
+		ID:           dbUser.ID,
+		CreatedAt:    dbUser.CreatedAt,
+		UpdatedAt:    dbUser.UpdatedAt,
+		Email:        dbUser.Email,
+		Token:        token,
+		RefreshToken: refreshToken,
+	}
+}
+
+func mapAccessTokenStruct(accessToken string) AccessToken {
+	return AccessToken{
+		Token: accessToken,
 	}
 }

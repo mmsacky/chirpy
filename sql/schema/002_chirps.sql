@@ -1,4 +1,4 @@
--- +goose UP
+-- +goose Up
 CREATE TABLE chirps (
     id UUID PRIMARY KEY NOT NULL,
     created_at TIMESTAMP NOT NULL,
@@ -6,5 +6,5 @@ CREATE TABLE chirps (
     body TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE
 );
--- +goose DOWN
-DROP TABLE chirps
+-- +goose Down
+DROP TABLE chirps;
