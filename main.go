@@ -18,6 +18,7 @@ type apiConfig struct {
 	db             database.Queries
 	platform       string
 	secret         string
+	polkaAPIKey    string
 }
 
 func main() {
@@ -42,6 +43,7 @@ func main() {
 		db:             *dbQueries,
 		platform:       os.Getenv("PLATFORM"),
 		secret:         os.Getenv("SECRET"),
+		polkaAPIKey:    os.Getenv("POLKA_KEY"),
 	}
 
 	root := http.Dir(".")
@@ -65,6 +67,8 @@ func main() {
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.countReq)
 	mux.HandleFunc("POST /admin/reset", apiCfg.reset)
+
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlePolkaWebhook)
 
 	log.Fatal(server.ListenAndServe())
 }
