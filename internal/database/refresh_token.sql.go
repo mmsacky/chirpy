@@ -77,6 +77,7 @@ SET
   updated_at = $2
 WHERE
   token = $3
+AND revoked_at IS NULL
 `
 
 type RevokeRefreshTokenParams struct {
